@@ -1,53 +1,87 @@
 /*
-*
-*
-*       Complete the API routing below
-*       
-*       
-*/
+ *
+ *
+ *       Complete the API routing below
+ *
+ *
+ */
 
-'use strict';
+const { expect } = require("chai");
+const { ObjectID } = require("mongodb");
 
-var expect = require('chai').expect;
-var MongoClient = require('mongodb').MongoClient;
-var ObjectId = require('mongodb').ObjectId;
-const MONGODB_CONNECTION_STRING = process.env.DB;
-//Example connection: MongoClient.connect(MONGODB_CONNECTION_STRING, function(err, db) {});
-
-module.exports = function (app) {
-
-  app.route('/api/books')
-    .get(function (req, res){
-      //response will be array of book objects
-      //json res format: [{"_id": bookid, "title": book_title, "commentcount": num_of_comments },...]
+module.exports = (app, collection) => {
+  app
+    .route("/api/books")
+    .get((req, res) => {
+      collection
+        .find()
+        .toArray()
+        .then(items => {
+          items.map(result => {
+            result.commentcount = result.comments.length;
+            delete result.comments;
+          });
+          return res.json(items);
+        })
+        .catch(err => console.error(`Failed to find documents: ${err}`));
     })
-    
-    .post(function (req, res){
-      var title = req.body.title;
-      //response will contain new book object including atleast _id and title
+
+    .post((req, res) => {
+      const { title } = req.body;
+      if (!title) return res.send("missing title");
+      return collection
+        .insertOne({ title, comments: [] })
+        .then(result => {
+          res.send(result.ops[0]);
+        })
+        .catch(err => console.error(`Failed to insert item: ${err}`));
     })
-    
-    .delete(function(req, res){
-      //if successful response will be 'complete delete successful'
+
+    .delete((req, res) => {
+      // if successful response will be 'complete delete successful'
+      collection
+        .deleteMany({})
+        .then(() => res.send("complete delete successful"));
     });
 
+  app
+    .route("/api/books/:id")
+    .get((req, res) => {
+      const bookid = req.params.id;
 
+      collection
+        .findOne({ _id: ObjectID(bookid) })
+        .then(result => {
+          if (!result) return res.send("no book exists");
 
-  app.route('/api/books/:id')
-    .get(function (req, res){
-      var bookid = req.params.id;
-      //json res format: {"_id": bookid, "title": book_title, "comments": [comment,comment,...]}
+          return res.json(result);
+        })
+        .catch(err => console.error(`Failed to find document: ${err}`));
     })
-    
-    .post(function(req, res){
-      var bookid = req.params.id;
-      var comment = req.body.comment;
-      //json res format same as .get
+
+    .post((req, res) => {
+      const bookid = req.params.id;
+      const { comment } = req.body;
+
+      collection
+        .findOneAndUpdate(
+          { _id: ObjectID(bookid) },
+          { $push: { comments: comment } },
+          { returnOriginal: false }
+        )
+        .then(updatedDocument => {
+          return res.json(updatedDocument.value);
+        })
+        .catch(err =>
+          console.error(`Failed to find and update document: ${err}`)
+        );
     })
-    
-    .delete(function(req, res){
-      var bookid = req.params.id;
-      //if successful response will be 'delete successful'
+
+    .delete((req, res) => {
+      const bookid = req.params.id;
+      // if successful response will be 'delete successful'
+      collection.deleteOne({ _id: bookid }).then(() => {
+        return res.send("delete successful");
+      });
     });
-  
 };
